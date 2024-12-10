@@ -1,24 +1,30 @@
 import requests
 from collections import Counter
-from multiprocessing import Pool
+from concurrent.futures import ThreadPoolExecutor
 import matplotlib.pyplot as plt
 import re
+import asyncio
+import time
 
-# URL с тестовым текстом
+# URL з тестовим текстом
 TEST_URL = "https://www.gutenberg.org/files/1342/1342-0.txt"
 
-def download_text(url):
-    """Завантажує текст із заданої URL-адреси."""
-    response = requests.get(url)
+async def download_text(url):
+    """Асинхронно завантажує текст із заданої URL-адреси."""
+    loop = asyncio.get_event_loop()
+    response = await loop.run_in_executor(None, requests.get, url)
     response.raise_for_status()
     return response.text
 
 def map_reduce(text):
-    """Аналізує частоту використання слів у тексті за допомогою MapReduce."""
+    """Аналізує частоту використання слів у тексті за допомогою багатопотоковості."""
     words = re.findall(r'\b\w+\b', text.lower())  # Токенізація тексту на слова
-    with Pool() as pool:
+    start_time = time.time()
+    with ThreadPoolExecutor() as executor:
         # Розподіл обробки по потоках
-        mapped = pool.map(map_word, words)
+        mapped = list(executor.map(map_word, words))
+    end_time = time.time()
+    print(f"Час виконання Map: {end_time - start_time:.4f} секунд")
     return reduce_word_counts(mapped)
 
 def map_word(word):
@@ -27,9 +33,12 @@ def map_word(word):
 
 def reduce_word_counts(mapped):
     """Функція Reduce: об'єднує результати."""
+    start_time = time.time()
     counter = Counter()
     for word, count in mapped:
         counter[word] += count
+    end_time = time.time()
+    print(f"Час виконання Reduce: {end_time - start_time:.4f} секунд")
     return counter
 
 def visualize_top_words(word_counts, top_n=10):
@@ -46,7 +55,7 @@ def visualize_top_words(word_counts, top_n=10):
     plt.tight_layout()
     plt.show()
 
-def main():
+async def main():
     print("Якщо ви не введете URL, буде використано тестовий текст.")
     url = input("Введіть URL тексту: ").strip()
     if not url:
@@ -54,11 +63,20 @@ def main():
         print(f"Використовується тестовий URL: {url}")
 
     try:
-        text = download_text(url)
+        start_time = time.time()
+        text = await download_text(url)
+        download_time = time.time()
+        print(f"Час завантаження тексту: {download_time - start_time:.4f} секунд")
+
         word_counts = map_reduce(text)
+        processing_time = time.time()
+        print(f"Час обробки тексту (MapReduce): {processing_time - download_time:.4f} секунд")
+
         visualize_top_words(word_counts, top_n=10)
+        end_time = time.time()
+        print(f"Загальний час виконання програми: {end_time - start_time:.4f} секунд")
     except Exception as e:
         print(f"Помилка: {e}")
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())
